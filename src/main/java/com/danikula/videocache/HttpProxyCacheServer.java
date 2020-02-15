@@ -1,6 +1,8 @@
 package com.danikula.videocache;
 
+import android.annotation.SuppressLint;
 import android.content.Context;
+import android.media.MediaPlayer;
 import android.net.Uri;
 import android.util.Log;
 
@@ -21,10 +23,14 @@ import java.io.File;
 import java.io.FileInputStream;
 import java.io.FileNotFoundException;
 import java.io.IOException;
+import java.io.InputStream;
+import java.net.HttpURLConnection;
 import java.net.InetAddress;
+import java.net.MalformedURLException;
 import java.net.ServerSocket;
 import java.net.Socket;
 import java.net.SocketException;
+import java.net.URL;
 import java.sql.Time;
 import java.util.Locale;
 import java.util.Map;
@@ -34,6 +40,7 @@ import java.util.concurrent.ExecutorService;
 import java.util.concurrent.Executors;
 
 import okio.BufferedSink;
+import okio.BufferedSource;
 import okio.Okio;
 import okio.Sink;
 import okio.Source;
@@ -114,6 +121,47 @@ public class HttpProxyCacheServer {
         return getProxyUrl(url, true);
     }
 
+    public String getProxyUrlAndCacheNow(String url) {
+        if (isCached(url)) {
+            File cacheFile = getCacheFile(url);
+            touchFileSafely(cacheFile);
+            return Uri.fromFile(cacheFile).toString();
+        } else {
+            String proxyUrl = getProxyUrl(url, true);
+            executorService.submit(new Runnable() {
+                @SuppressLint("LongLogTag")
+                @Override
+                public void run() {
+                    try {
+                        URL url1 = new URL(proxyUrl);
+                        HttpURLConnection httpURLConnection = (HttpURLConnection) url1.openConnection();
+                        httpURLConnection.setRequestMethod("GET");
+                        //连接
+                        httpURLConnection.connect();
+                        int responseCode = httpURLConnection.getResponseCode();
+                        Log.e("cacahe Request ", String.valueOf(responseCode));
+                        if (responseCode == 200) {
+                            long contentLengthLong = httpURLConnection.getContentLength();
+                            Log.e("cacahe Request contentLengthLong", String.valueOf(contentLengthLong));
+                            InputStream inputStream = httpURLConnection.getInputStream();
+                            byte[] bytes = new byte[2048];
+                            int read = 0;
+                            while ((read = inputStream.read(bytes)) != -1) { }
+                            inputStream.close();
+                        }
+                        httpURLConnection.disconnect();
+                    } catch (MalformedURLException e) {
+                        e.printStackTrace();
+                    } catch (IOException e) {
+                        e.printStackTrace();
+                    }
+                }
+            });
+            return proxyUrl;
+        }
+    }
+
+
     /**
      * Returns url that wrap original url and should be used for client (MediaPlayer, ExoPlayer, etc).
      * <p>
@@ -123,6 +171,18 @@ public class HttpProxyCacheServer {
      * @param url                a url to file that should be cached.
      * @param allowCachedFileUri {@code true} if allow to return file:// uri if url is fully cached
      * @return a wrapped by proxy url if file is not fully cached or url pointed to cache file otherwise (if {@code allowCachedFileUri} is {@code true}).
+     *
+     *
+     */
+    /**
+     * 返回包装原始url的url，应用于客户端（MediaPlayer、ExoPlayer等）。
+     * <p>
+     * 如果参数{@code allowCachedFileUri}是{@code true}，并且此url的文件已完全缓存
+     * （这意味着方法{@link#isCached（String）}返回{@code true}），然后将file://uri返回到缓存文件。
+     *
+     * @param url                      应该缓存的文件的url。
+     * @param allowCachedFileUri{@code true}如果url已完全缓存，则允许返回file://uri
+     * @如果文件未完全缓存或url指向缓存文件（如果{@code allowCachedFileUri}是{@code true}），则返回由代理包装的url。
      */
     public String getProxyUrl(String url, boolean allowCachedFileUri) {
         if (allowCachedFileUri && isCached(url)) {
@@ -223,6 +283,7 @@ public class HttpProxyCacheServer {
             clientsMap.clear();
         }
     }
+
 
     private void waitForRequest() {
         try {

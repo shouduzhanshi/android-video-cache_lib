@@ -17,6 +17,6 @@ android {
 }
 
 dependencies {
-    implementation 'org.slf4j:slf4j-android:1.7.21'
-    implementation 'com.squareup.okio:okio:1.17.4'
+    compileOnly 'org.slf4j:slf4j-android:1.7.21'
+    compileOnly 'com.squareup.okio:okio:1.17.4'
 }
